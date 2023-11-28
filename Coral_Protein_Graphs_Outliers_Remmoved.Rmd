@@ -1,0 +1,881 @@
+---
+title: "Coral_Protein_Outliers_Removed"
+author: "Rafael Solorzano"
+date: "5/28/2021"
+output: word_document
+---
+
+
+```{r Calling in packages, include=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(readxl)
+library(dplyr)
+library(janitor)
+library(hrbrthemes)
+library(viridis)
+library(ggpubr)
+library(rstatix)
+```
+
+```{r Reading in excel files, include=FALSE}
+coral_master_file <- read_excel("~/Desktop/Protein Data/coral_master_file.xlsx")
+
+Protein_conc_host_all<- read_excel("~/Desktop/Protein_conc_host_all.xlsx")
+
+Zoox_protein_conc_all <- read_excel("~/Desktop/Zoox_protein_conc_all.xlsx")
+
+```
+
+
+# Making a Master Data Dheet
+
+## I figured out a trick to merge the protein data to their respective rows in the master sheet, but then I could not figure out how to work with that giant sheet when making the graphs. I was not too sure how to work with the empty rows or assign them values, so instead I stuck with this version. This version saw all empty rows corresponding to host & symbiont get elimnated, since the values in the holobiont rows should correspond to the empty rows below (as seen in master sheet).
+
+## Then I omitted the "fraction" column because I decided they were not too necessary since the values present on the master would correspond with either host, holobiont, or symbiont. 
+
+## Once I had the master sheet cleaned up, I could then merge relevant host & symbiont protein data, by their ID #.  
+
+
+```{r}
+#remove columns with all NA's 
+coral_master_file_1 <- janitor::remove_empty(coral_master_file, which = "cols")
+#Remove rows with NA's so we are just left with holobiont data, which matches the other two fractions 
+coral_master_file_2 <- na.omit(coral_master_file_1)
+#I omitted the fraction column to work with a single id # which is matched with data that is identical for all three fractions 
+coral_master_file_2$fraction <- NULL
+```
+
+***
+
+# Host & Zoox: Creating Columns of Protein Normalized to Surface Area
+
+## I created new merged (protein + master) data sheets for each host & zoox data frame, which I ended up merging together into "merged_host_et_zoox" which contains the cleaned up master, merged to the surface area normalized host & zoox protein data. 
+```{r}
+## Protein per coral for host
+#merge "vol_add_brush" from the master file to the host data 
+#now the master & host data are combined with all like columns plus the additional columns
+merged_host <- merge(Protein_conc_host_all,coral_master_file_2)
+# I want to multiply proteins_host (mg/mL) * vol_add_brush (mL) = proteins_host (mg) 
+merged_host$protein_sa_norm_host <- merged_host$"proteins_host (mg/ml)" * merged_host$vol_add_brush
+#Now I want to calculate the normalized protein per coral (host): proteins_host (mg) / sa = surface area normalized protein 
+merged_host$protein_sa_norm_host <- merged_host$"protein_sa_norm_host" / merged_host$sa 
+
+## Protein per coral for zoox
+#remove last column which has mostly NA's with only a couple comments
+Zoox_protein_conc_all$"...8" <- NULL
+#master & zoox data are combined with all like columns plus the additional columns
+merged_zoox <- merge(Zoox_protein_conc_all,coral_master_file_2)
+#I want to calculate the amount of Zoox protein in mg: "proteins_zoox (mg/mL) * vol_add_brush (mL) = zoox protein (mg) 
+merged_zoox$protein_sa_norm_zoox <- merged_zoox$"proteins_zoox (mg/ml)" * merged_zoox$vol_add_brush
+# I want to normalize the protein for the zoox to surface area: zoox protein (mg) / sa
+merged_zoox$protein_sa_norm_zoox <- merged_zoox$"protein_sa_norm_zoox" / merged_zoox$sa 
+
+## merging the merged host & zoox data together 
+merged_host_et_zoox <- merge(merged_host,merged_zoox)
+```
+
+***
+
+# Symbiont Count Normalization 
+
+*** 
+# Normalizing Host Protein to Big symbiont Count: 
+## The SC normalized protein units are in mg, but it yielded very small numbers: so I wanted to convert the units to nanograms (ng) by multipluying the (mg/SC) value by 10^6. 
+```{r}
+#Adding a column of Host protein normalized to big symbiont count (BSC) 
+  #First I multiply: "proteins_host (mg/mL) * vol_add_brush (mL) = proteins_host (mg) 
+merged_host_et_zoox$protein_BSC_norm_host <- merged_host_et_zoox$"proteins_host (mg/ml)" * merged_host_et_zoox$vol_add_brush
+  #Then I want to normalize to the big symbiont count (BSC): proteins_host (mg) / big_symbiont_count
+      # However, the BSC column needs to be converted from character to numeric 
+merged_host_et_zoox$big_symbiont_count <- as.numeric(merged_host_et_zoox$big_symbiont_count)
+      # Now I can finally continue to normalize to the BSC 
+merged_host_et_zoox$protein_BSC_norm_host <- merged_host_et_zoox$protein_BSC_norm_host  / merged_host_et_zoox$big_symbiont_count 
+
+
+# Converting mg/sa --> ng/sa 
+merged_host_et_zoox$protein_BSC_norm_host <- merged_host_et_zoox$protein_BSC_norm_host * (1e+06)
+```
+
+***
+#Normalizing Host Protein to Small Symbiont Count: 
+## Converting mg/SC * 1e+06 --> ng/SC
+```{r}
+#Adding a column of Host protein normalized to small symbiont count (SSC) 
+  #First I multiply: "proteins_host (mg/mL) * vol_add_brush (mL) = proteins_host(mg) 
+merged_host_et_zoox$protein_SSC_norm_host <- merged_host_et_zoox$"proteins_host (mg/ml)" * merged_host_et_zoox$vol_add_brush
+  #Then I want to normalize to the small symbiont count (SSC): proteins_host (mg) / small_symbiont_count
+      # However, the SSC column needs to be converted from character to numeric 
+merged_host_et_zoox$small_symbiont_count <- as.numeric(merged_host_et_zoox$small_symbiont_count)
+      # Now I can finally continue to normalize to the SSC 
+merged_host_et_zoox$protein_SSC_norm_host <- merged_host_et_zoox$protein_SSC_norm_host / merged_host_et_zoox$small_symbiont_count
+
+
+# Converting mg/sa --> ng/sa 
+merged_host_et_zoox$protein_SSC_norm_host <- merged_host_et_zoox$protein_SSC_norm_host * (1e+06)
+```
+
+***
+#Normalizing Zoox Protein to Big Symbiont Count: 
+## Converting mg/SC * 1e+06 --> ng/SC
+```{r}
+#Adding a column of Zoox protein normalized to big symbiont count (BSC) 
+  #First I multiply: "proteins_zoox (mg/mL) * vol_add_brush (mL) = proteins_zoox(mg) 
+merged_host_et_zoox$protein_BSC_norm_zoox <- merged_host_et_zoox$"proteins_zoox (mg/ml)" * merged_host_et_zoox$vol_add_brush
+  #Then I want to normalize to the big symbiont count (BSC): proteins_zoox (mg) / big_symbiont_count
+merged_host_et_zoox$protein_BSC_norm_zoox<- merged_host_et_zoox$protein_BSC_norm_zoox / merged_host_et_zoox$big_symbiont_count
+
+# Converting mg/sa --> ng/sa 
+merged_host_et_zoox$protein_BSC_norm_zoox <- merged_host_et_zoox$protein_BSC_norm_zoox * (1e+06)
+```
+
+***
+#Normalizing Zoox Protein to Small Symbiont Count: 
+## Converting mg/SC * 1e+06 --> ng/SC
+```{r}
+#Adding a column of Zoox protein normalized to small symbiont count (SSC) 
+  #First I multiply: "proteins_zoox (mg/mL) * vol_add_brush (mL) = proteins_zoox(mg) 
+merged_host_et_zoox$protein_SSC_norm_zoox <- merged_host_et_zoox$"proteins_zoox (mg/ml)" * merged_host_et_zoox$vol_add_brush
+  #Then I want to normalize to the small symbiont count (SSC): proteins_zoox (mg) / small_symbiont_count
+merged_host_et_zoox$protein_SSC_norm_zoox<- merged_host_et_zoox$protein_SSC_norm_zoox / merged_host_et_zoox$small_symbiont_count
+
+# Converting mg/sa --> ng/sa 
+merged_host_et_zoox$protein_SSC_norm_zoox <- merged_host_et_zoox$protein_SSC_norm_zoox * (1e+06)
+```
+
+*** 
+
+## By determining the IQR for each surface area normalized host & zoox protein data, 
+
+## One method that I had in mind was that I wanted to determine outliers from the entire columns of normalized host & zoox respectively.I was not sure if that was accurate becuase I figured that since the feeding conditions were causing the differences in [protein], then I would need to eliminate outliers from each group instead. 
+## The best analogy that I thought this was like would be heghts of adults and children -- whose outliers would need to be determined in their own respective groups, rather than all lumped together. 
+
+*** 
+
+# Eliminating outliers from big symbiont count normalized host protein 
+
+```{r}
+#find Q1, Q3, and interquartile range for values in column: Host protein (BSC normalized) 
+Q1_host_BSC <- quantile(merged_host_et_zoox$protein_BSC_norm_host, .25, na.rm = TRUE)
+Q3_host_BSC <- quantile(merged_host_et_zoox$protein_BSC_norm_host, .75, na.rm = TRUE)
+IQR_host_BSC <- IQR(merged_host_et_zoox$protein_BSC_norm_host, na.rm = TRUE)
+#only keep rows in dataframe that have values within 1.5*IQR of Q1 and Q3
+protein_BSC_norm_host <- subset(merged_host_et_zoox, merged_host_et_zoox$protein_BSC_norm_host> (Q1_host_BSC - 1.5*IQR_host_BSC) & merged_host_et_zoox$protein_BSC_norm_host< (Q3_host_BSC + 1.5*IQR_host_BSC))
+#view row and column count of new data frame
+dim(protein_BSC_norm_host) 
+
+merged_host_et_zoox <- data.frame(protein_SSC_norm_host)
+
+```
+
+
+# Eliminating outliers from big symbiont count normalized Zoox protein 
+```{r}
+#find Q1, Q3, and interquartile range for values in column: Zoox protein (BSC normalized) 
+Q1_zoox_BSC <- quantile(merged_host_et_zoox$protein_BSC_norm_zoox, .25, na.rm = TRUE)
+Q3_zoox_BSC <- quantile(merged_host_et_zoox$protein_BSC_norm_zoox, .75, na.rm = TRUE)
+IQR_zoox_BSC <- IQR(merged_host_et_zoox$protein_BSC_norm_zoox, na.rm = TRUE)
+#only keep rows in dataframe that have values within 1.5*IQR of Q1 and Q3
+protein_BSC_norm_zoox <- subset(merged_host_et_zoox, merged_host_et_zoox$protein_BSC_norm_zoox> (Q1_zoox_BSC - 1.5*IQR_zoox_BSC) & merged_host_et_zoox$protein_BSC_norm_zoox< (Q3_zoox_BSC + 1.5*IQR_zoox_BSC))
+#view row and column count of new data frame
+dim(protein_BSC_norm_zoox) 
+```
+
+
+# Eliminating outliers from small symbiont count normalized Host protein 
+```{r}
+#find Q1, Q3, and interquartile range for values in column: Host protein (SSC normalized) 
+Q1_host_SSC <- quantile(merged_host_et_zoox$protein_SSC_norm_host, .25, na.rm = TRUE)
+Q3_host_SSC <- quantile(merged_host_et_zoox$protein_SSC_norm_host, .75, na.rm = TRUE)
+IQR_host_SSC <- IQR(merged_host_et_zoox$protein_SSC_norm_host, na.rm = TRUE)
+#only keep rows in dataframe that have values within 1.5*IQR of Q1 and Q3
+protein_SSC_norm_host <- subset(merged_host_et_zoox, merged_host_et_zoox$protein_SSC_norm_host> (Q1_host_SSC - 1.5*IQR_host_SSC) & merged_host_et_zoox$protein_SSC_norm_host< (Q3_host_SSC + 1.5*IQR_host_SSC)) 
+#view row and column count of new data frame
+dim(protein_SSC_norm_host) 
+```
+
+
+# Eliminating outliers from small symbiont count normalized Zoox protein 
+```{r}
+#find Q1, Q3, and interquartile range for values in column: Zoox protein (SSC normalized) 
+Q1_zoox_SSC <- quantile(merged_host_et_zoox$protein_SSC_norm_zoox, .25, na.rm = TRUE)
+Q3_zoox_SSC <- quantile(merged_host_et_zoox$protein_SSC_norm_zoox, .75, na.rm = TRUE)
+IQR_zoox_SSC <- IQR(merged_host_et_zoox$protein_SSC_norm_zoox, na.rm = TRUE)
+#only keep rows in dataframe that have values within 1.5*IQR of Q1 and Q3
+protein_SSC_norm_zoox <- subset(merged_host_et_zoox, merged_host_et_zoox$protein_SSC_norm_zoox> (Q1_zoox_SSC - 1.5*IQR_zoox_SSC) & merged_host_et_zoox$protein_SSC_norm_zoox< (Q3_zoox_SSC + 1.5*IQR_zoox_SSC))
+#view row and column count of new data frame
+dim(protein_SSC_norm_zoox) 
+```
+
+
+*** 
+
+### Graphing: Big Symbiont Count Normalized Host Protein  vs _____
+
+## BSC Host protein vs treatments 
+```{r}
+#15 Protein per coral of host vs treatments 
+gg_base_15 <- ggplot(data = merged_host_et_zoox, aes(x = treatment, y = protein_BSC_norm_host, group = treatment))
+violin_15 <- gg_base_15 + geom_violin()
+violin_15 + geom_boxplot(width = 0.1) + labs(title = "Host BSC norm protein by treatment") + ylim(0,75) +ylab("Host: ng protein/BSC")
+```
+
+```{r, Checking for Outliers}
+# Summary Statistics: Before removing outliers 
+merged_host_et_zoox %>%
+  group_by(treatment) %>%
+  get_summary_stats(protein_BSC_norm_host, type = "mean_sd")
+# Visualization 
+ggboxplot(merged_host_et_zoox, x = "treatment", y = "protein_BSC_norm_host")
+
+# Check Assumptions: Outliers --> there are 2 extreme outliers 
+merged_host_et_zoox %>% 
+  group_by(treatment) %>%
+  identify_outliers(protein_BSC_norm_host) 
+
+# Check Normailty: Build the linear model
+model_5  <- lm(protein_BSC_norm_host ~ treatment, data = merged_host_et_zoox)
+  # Create a QQ plot of residuals
+ggqqplot(residuals(model_5))
+  # Compute Shapiro-Wilk test of normality
+shapiro_test(residuals(model_5))  # we had a p < 0.05, which means that the data significantly deviates from a normal distribution 
+
+#Check normality assumption by groups. Computing Shapiro-Wilk test for each group level. If the data is normally distributed, the p-value should be greater than 0.05.
+merged_host_et_zoox %>%
+  group_by(treatment) %>%
+  shapiro_test(protein_BSC_norm_host) # some colonies are <0.05, which means they are not normally distributed 
+
+# Checking normality of each colony 
+ggqqplot(merged_host_et_zoox, "protein_BSC_norm_host", facet.by = "treatment")
+
+# Homogenietey of variance assumption 
+plot(model_5, 1) 
+
+#Computation 
+res.aov <- merged_host_et_zoox %>% anova_test(protein_BSC_norm_host ~ treatment)
+res.aov
+
+```
+
+
+
+## BSC Host Protein vs Colony 
+```{r}
+#16 Protein per coral of Host vs colony 
+gg_base_16 <- ggplot(data = merged_host_et_zoox, aes(x = colony, y = protein_BSC_norm_host, group = colony))
+violin_16 <- gg_base_16 + geom_violin() + scale_x_continuous(breaks=c(1:12))
+violin_16 + geom_boxplot(width = 0.1) + labs(title = "Host BSC norm protein by colony") + ylim(0,70) +ylab("Host: ng protein/BSC")
+
+```
+
+```{r, Checking for Outliers}
+# Summary Statistics: Before removing outliers 
+merged_host_et_zoox %>%
+  group_by(colony) %>%
+  get_summary_stats(protein_BSC_norm_host, type = "mean_sd")
+# Visualization 
+ggboxplot(merged_host_et_zoox, x = "colony", y = "protein_BSC_norm_host")
+
+# Check Assumptions: Outliers --> there are 2 extreme outliers 
+merged_host_et_zoox %>% 
+  group_by(colony) %>%
+  identify_outliers(protein_BSC_norm_host) 
+
+# Check Normailty: Build the linear model
+model_1  <- lm(protein_BSC_norm_host ~ colony, data = merged_host_et_zoox)
+  # Create a QQ plot of residuals
+ggqqplot(residuals(model_1))
+  # Compute Shapiro-Wilk test of normality
+shapiro_test(residuals(model_1))  # we had a p < 0.05, which means that the data significantly deviates from a normal distribution 
+
+#Check normality assumption by groups. Computing Shapiro-Wilk test for each group level. If the data is normally distributed, the p-value should be greater than 0.05.
+merged_host_et_zoox %>%
+  group_by(colony) %>%
+  shapiro_test(protein_BSC_norm_host) # some colonies are <0.05, which means they are not normally distributed 
+
+# Checking normality of each colony 
+ggqqplot(merged_host_et_zoox, "protein_BSC_norm_host", facet.by = "colony")
+
+# Homogenietey of variance assumption 
+plot(model_1, 1) 
+
+#Computation 
+res.aov <- merged_host_et_zoox %>% anova_test(protein_BSC_norm_host ~ colony)
+res.aov
+
+```
+
+
+
+
+
+## BSC Host Protein vs Tank 
+```{r}
+#17 protein per coral of Host vs tank 
+gg_base_17 <- ggplot(data = merged_host_et_zoox, aes(x = tank, y = protein_BSC_norm_host, group = tank))
+violin_17 <- gg_base_17 + geom_violin() + scale_x_continuous(breaks=c(1:12))
+violin_17 + geom_boxplot(width = 0.1) + labs(title = "Host BSC norm protein by tank") + ylim(0,75) +ylab("Host: ng protein/BSC")
+
+```
+
+```{r, Checking for Outliers}
+# Summary Statistics: Before removing outliers 
+merged_host_et_zoox %>%
+  group_by(tank) %>%
+  get_summary_stats(protein_BSC_norm_host, type = "mean_sd")
+# Visualization 
+ggboxplot(merged_host_et_zoox, x = "tank", y = "protein_BSC_norm_host")
+
+# Check Assumptions: Outliers --> there are 2 extreme outliers 
+merged_host_et_zoox %>% 
+  group_by(tank) %>%
+  identify_outliers(protein_BSC_norm_host) 
+
+# Check Normailty: Build the linear model
+model_9  <- lm(protein_BSC_norm_host ~ tank, data = merged_host_et_zoox)
+  # Create a QQ plot of residuals
+ggqqplot(residuals(model_9))
+  # Compute Shapiro-Wilk test of normality
+shapiro_test(residuals(model_9))  # we had a p < 0.05, which means that the data significantly deviates from a normal distribution 
+
+#Check normality assumption by groups. Computing Shapiro-Wilk test for each group level. If the data is normally distributed, the p-value should be greater than 0.05.
+merged_host_et_zoox %>%
+  group_by(tank) %>%
+  shapiro_test(protein_BSC_norm_host) # some colonies are <0.05, which means they are not normally distributed 
+
+# Checking normality of each colony 
+ggqqplot(merged_host_et_zoox, "protein_BSC_norm_host", facet.by = "tank")
+
+# Homogenietey of variance assumption 
+plot(model_9, 1) 
+
+#Computation 
+res.aov <- merged_host_et_zoox %>% anova_test(protein_BSC_norm_host ~ tank)
+res.aov
+
+```
+
+
+
+
+
+
+*** 
+
+#Normalizing Host Protein to Small Symbiont Count: 
+
+## Converting mg/SC * 1e+06 --> ng/SC
+
+```{r}
+#Adding a column of Host protein normalized to small symbiont count (SSC) 
+  #First I multiply: "proteins_host (mg/mL) * vol_add_brush (mL) = proteins_host(mg) 
+merged_host_et_zoox$protein_SSC_norm_host <- merged_host_et_zoox$"proteins_host (mg/ml)" * merged_host_et_zoox$vol_add_brush
+  #Then I want to normalize to the small symbiont count (SSC): proteins_host (mg) / small_symbiont_count
+      # However, the SSC column needs to be converted from character to numeric 
+merged_host_et_zoox$small_symbiont_count <- as.numeric(merged_host_et_zoox$small_symbiont_count)
+      # Now I can finally continue to normalize to the SSC 
+merged_host_et_zoox$protein_SSC_norm_host <- merged_host_et_zoox$protein_SSC_norm_host / merged_host_et_zoox$small_symbiont_count
+
+
+# Converting mg/sa --> ng/sa 
+merged_host_et_zoox$protein_SSC_norm_host <- merged_host_et_zoox$protein_SSC_norm_host * (1e+06)
+```
+
+
+### Graphing: Small Symbiont Count Normalized Host Protein  vs _____
+
+## SSC Host protein vs treatments 
+```{r}
+#18 Protein per coral of host vs treatments 
+gg_base_18 <- ggplot(data = merged_host_et_zoox, aes(x = treatment, y = protein_SSC_norm_host, group = treatment))
+violin_18 <- gg_base_18 + geom_violin()
+violin_18 + geom_boxplot(width = 0.1) + labs(title = "Host SSC norm protein by treatment") + ylim(0,300) +ylab("Host: ng protein/SSC")
+```
+
+```{r, Checking for Outliers}
+# Summary Statistics: Before removing outliers 
+merged_host_et_zoox %>%
+  group_by(treatment) %>%
+  get_summary_stats(protein_SSC_norm_host, type = "mean_sd")
+# Visualization 
+ggboxplot(merged_host_et_zoox, x = "treatment", y = "protein_SSC_norm_host")
+
+# Check Assumptions: Outliers --> there are 2 extreme outliers 
+merged_host_et_zoox %>% 
+  group_by(treatment) %>%
+  identify_outliers(protein_SSC_norm_host) 
+
+# Check Normailty: Build the linear model
+model_6  <- lm(protein_SSC_norm_host ~ treatment, data = merged_host_et_zoox)
+  # Create a QQ plot of residuals
+ggqqplot(residuals(model_6))
+  # Compute Shapiro-Wilk test of normality
+shapiro_test(residuals(model_6))  # we had a p < 0.05, which means that the data significantly deviates from a normal distribution 
+
+#Check normality assumption by groups. Computing Shapiro-Wilk test for each group level. If the data is normally distributed, the p-value should be greater than 0.05.
+merged_host_et_zoox %>%
+  group_by(treatment) %>%
+  shapiro_test(protein_SSC_norm_host) # some colonies are <0.05, which means they are not normally distributed 
+
+# Checking normality of each colony 
+ggqqplot(merged_host_et_zoox, "protein_SSC_norm_host", facet.by = "treatment")
+
+# Homogenietey of variance assumption 
+plot(model_6, 1) 
+
+#Computation 
+res.aov <- merged_host_et_zoox %>% anova_test(protein_SSC_norm_host ~ treatment)
+res.aov
+
+```
+
+
+
+## SSC Host Protein vs Colony 
+```{r}
+#19 Protein per coral of Host vs colony 
+gg_base_19 <- ggplot(data = merged_host_et_zoox, aes(x = colony, y = protein_SSC_norm_host, group = colony))
+violin_19 <- gg_base_19 + geom_violin() + scale_x_continuous(breaks=c(1:12))
+violin_19 + geom_boxplot(width = 0.1) + labs(title = "Host SSC norm protein by colony") + ylim(0,800) +ylab("Host: ng protein/SSC")
+```
+
+```{r, Checking for Outliers}
+# Summary Statistics: Before removing outliers 
+merged_host_et_zoox %>%
+  group_by(colony) %>%
+  get_summary_stats(protein_SSC_norm_host, type = "mean_sd")
+# Visualization 
+ggboxplot(merged_host_et_zoox, x = "colony", y = "protein_SSC_norm_host")
+
+# Check Assumptions: Outliers --> there are 2 extreme outliers 
+merged_host_et_zoox %>% 
+  group_by(colony) %>%
+  identify_outliers(protein_SSC_norm_host) 
+
+# Check Normailty: Build the linear model
+model_2  <- lm(protein_SSC_norm_host ~ colony, data = merged_host_et_zoox)
+  # Create a QQ plot of residuals
+ggqqplot(residuals(model_2))
+  # Compute Shapiro-Wilk test of normality
+shapiro_test(residuals(model_2))  # we had a p < 0.05, which means that the data significantly deviates from a normal distribution 
+
+#Check normality assumption by groups. Computing Shapiro-Wilk test for each group level. If the data is normally distributed, the p-value should be greater than 0.05.
+merged_host_et_zoox %>%
+  group_by(colony) %>%
+  shapiro_test(protein_SSC_norm_host) # some colonies are <0.05, which means they are not normally distributed 
+
+# Checking normality of each colony 
+ggqqplot(merged_host_et_zoox, "protein_SSC_norm_host", facet.by = "colony")
+
+# Homogenietey of variance assumption 
+plot(model_2, 1) 
+
+#Computation 
+res.aov <- merged_host_et_zoox %>% anova_test(protein_SSC_norm_host ~ colony)
+res.aov
+
+```
+
+
+
+
+
+## SSC Host Protein vs Tank 
+```{r}
+#20 protein per coral of Host vs tank 
+gg_base_20 <- ggplot(data = merged_host_et_zoox, aes(x = tank, y = protein_SSC_norm_host, group = tank))
+violin_20 <- gg_base_20 + geom_violin() + scale_x_continuous(breaks=c(1:12))
+violin_20 + geom_boxplot(width = 0.1) + labs(title = "Host SSC norm protein by tank") + ylim(0,300) +ylab("Host: ng protein/SSC")
+
+```
+```{r, Checking for Outliers}
+# Summary Statistics: Before removing outliers 
+merged_host_et_zoox %>%
+  group_by(tank) %>%
+  get_summary_stats(protein_SSC_norm_host, type = "mean_sd")
+# Visualization 
+ggboxplot(merged_host_et_zoox, x = "tank", y = "protein_SSC_norm_host")
+
+# Check Assumptions: Outliers --> there are 2 extreme outliers 
+merged_host_et_zoox %>% 
+  group_by(tank) %>%
+  identify_outliers(protein_SSC_norm_host) 
+
+# Check Normailty: Build the linear model
+model_10  <- lm(protein_SSC_norm_host ~ tank, data = merged_host_et_zoox)
+  # Create a QQ plot of residuals
+ggqqplot(residuals(model_10))
+  # Compute Shapiro-Wilk test of normality
+shapiro_test(residuals(model_10))  # we had a p < 0.05, which means that the data significantly deviates from a normal distribution 
+
+#Check normality assumption by groups. Computing Shapiro-Wilk test for each group level. If the data is normally distributed, the p-value should be greater than 0.05.
+merged_host_et_zoox %>%
+  group_by(tank) %>%
+  shapiro_test(protein_SSC_norm_host) # some colonies are <0.05, which means they are not normally distributed 
+
+# Checking normality of each colony 
+ggqqplot(merged_host_et_zoox, "protein_SSC_norm_host", facet.by = "tank")
+
+# Homogenietey of variance assumption 
+plot(model_10, 1) 
+
+#Computation 
+res.aov <- merged_host_et_zoox %>% anova_test(protein_SSC_norm_host ~ tank)
+res.aov
+
+```
+
+*** 
+
+
+#Normalizing Zoox Protein to Big Symbiont Count: 
+
+## Converting mg/SC * 1e+06 --> ng/SC
+
+```{r}
+#Adding a column of Zoox protein normalized to big symbiont count (BSC) 
+  #First I multiply: "proteins_zoox (mg/mL) * vol_add_brush (mL) = proteins_zoox(mg) 
+merged_host_et_zoox$protein_BSC_norm_zoox <- merged_host_et_zoox$"proteins_zoox (mg/ml)" * merged_host_et_zoox$vol_add_brush
+  #Then I want to normalize to the big symbiont count (BSC): proteins_zoox (mg) / big_symbiont_count
+merged_host_et_zoox$protein_BSC_norm_zoox<- merged_host_et_zoox$protein_BSC_norm_zoox / merged_host_et_zoox$big_symbiont_count
+
+# Converting mg/sa --> ng/sa 
+merged_host_et_zoox$protein_BSC_norm_zoox <- merged_host_et_zoox$protein_BSC_norm_zoox * (1e+06)
+```
+
+### Graphing: Big Symbiont Count Normalized Zoox Protein  vs _____
+
+## BSC Zoox protein vs treatments 
+```{r}
+#21 Protein per coral of zoox vs treatments 
+gg_base_21 <- ggplot(data = merged_host_et_zoox, aes(x = treatment, y = protein_BSC_norm_zoox, group = treatment))
+violin_21 <- gg_base_21 + geom_violin()
+violin_21 + geom_boxplot(width = 0.1) + labs(title = "Zoox BSC norm protein by treatment")  +ylab("Zoox: ng protein/BSC")
+
+
+```
+
+```{r, Checking for Outliers}
+# Summary Statistics: Before removing outliers 
+merged_host_et_zoox %>%
+  group_by(treatment) %>%
+  get_summary_stats(protein_BSC_norm_zoox, type = "mean_sd")
+# Visualization 
+ggboxplot(merged_host_et_zoox, x = "treatment", y = "protein_BSC_norm_zoox")
+
+# Check Assumptions: Outliers --> there are 2 extreme outliers 
+merged_host_et_zoox %>% 
+  group_by(treatment) %>%
+  identify_outliers(protein_BSC_norm_zoox) 
+
+# Check Normailty: Build the linear model
+model_7  <- lm(protein_BSC_norm_zoox ~ treatment, data = merged_host_et_zoox)
+  # Create a QQ plot of residuals
+ggqqplot(residuals(model_7))
+  # Compute Shapiro-Wilk test of normality
+shapiro_test(residuals(model_7))  # we had a p < 0.05, which means that the data significantly deviates from a normal distribution 
+
+#Check normality assumption by groups. Computing Shapiro-Wilk test for each group level. If the data is normally distributed, the p-value should be greater than 0.05.
+merged_host_et_zoox %>%
+  group_by(treatment) %>%
+  shapiro_test(protein_BSC_norm_zoox) # some colonies are <0.05, which means they are not normally distributed 
+
+# Checking normality of each colony 
+ggqqplot(merged_host_et_zoox, "protein_BSC_norm_zoox", facet.by = "treatment")
+
+# Homogenietey of variance assumption 
+plot(model_7, 1) 
+
+#Computation 
+res.aov <- merged_host_et_zoox %>% anova_test(protein_BSC_norm_zoox ~ treatment)
+res.aov
+
+```
+
+
+
+## BSC Zoox Protein vs Colony 
+```{r}
+#22 Protein per coral of Zoox vs colony 
+gg_base_22 <- ggplot(data = merged_host_et_zoox, aes(x = colony, y = protein_BSC_norm_zoox, group = colony))
+violin_22 <- gg_base_22 + geom_violin() + scale_x_continuous(breaks=c(1:12))
+violin_22 + geom_boxplot(width = 0.1) + labs(title = "Zoox BSC norm protein by colony") + ylab("Zoox: ng protein/BSC")
+```
+
+```{r, Checking for Outliers}
+# Summary Statistics: Before removing outliers 
+merged_host_et_zoox %>%
+  group_by(colony) %>%
+  get_summary_stats(protein_BSC_norm_zoox, type = "mean_sd")
+# Visualization 
+ggboxplot(merged_host_et_zoox, x = "colony", y = "protein_BSC_norm_zoox")
+
+# Check Assumptions: Outliers --> there are 2 extreme outliers 
+merged_host_et_zoox %>% 
+  group_by(colony) %>%
+  identify_outliers(protein_BSC_norm_zoox) 
+
+# Check Normailty: Build the linear model
+model_3  <- lm(protein_BSC_norm_zoox ~ colony, data = merged_host_et_zoox)
+  # Create a QQ plot of residuals
+ggqqplot(residuals(model_3))
+  # Compute Shapiro-Wilk test of normality
+shapiro_test(residuals(model_3))  # we had a p < 0.05, which means that the data significantly deviates from a normal distribution 
+
+#Check normality assumption by groups. Computing Shapiro-Wilk test for each group level. If the data is normally distributed, the p-value should be greater than 0.05.
+merged_host_et_zoox %>%
+  group_by(colony) %>%
+  shapiro_test(protein_BSC_norm_zoox) # some colonies are <0.05, which means they are not normally distributed 
+
+# Checking normality of each colony 
+ggqqplot(merged_host_et_zoox, "protein_BSC_norm_zoox", facet.by = "colony")
+
+# Homogenietey of variance assumption 
+plot(model_3, 1) 
+
+#Computation 
+res.aov <- merged_host_et_zoox %>% anova_test(protein_BSC_norm_zoox ~ colony)
+res.aov
+
+```
+
+
+
+## BSC Zoox Protein vs Tank 
+```{r}
+#23 protein per coral of Zoox vs tank 
+gg_base_23 <- ggplot(data = merged_host_et_zoox, aes(x = tank, y = protein_BSC_norm_zoox, group = tank))
+violin_23 <- gg_base_23 + geom_violin() + scale_x_continuous(breaks=c(1:12))
+violin_23 + geom_boxplot(width = 0.1) + labs(title = "Zoox BSC norm protein by tank") + ylab("Zoox: ng protein/BSC")
+
+```
+
+```{r, Checking for Outliers}
+# Summary Statistics: Before removing outliers 
+merged_host_et_zoox %>%
+  group_by(tank) %>%
+  get_summary_stats(protein_BSC_norm_zoox, type = "mean_sd")
+# Visualization 
+ggboxplot(merged_host_et_zoox, x = "tank", y = "protein_BSC_norm_zoox")
+
+# Check Assumptions: Outliers --> there are 2 extreme outliers 
+merged_host_et_zoox %>% 
+  group_by(tank) %>%
+  identify_outliers(protein_BSC_norm_zoox) 
+
+# Check Normailty: Build the linear model
+model_11  <- lm(protein_BSC_norm_zoox ~ tank, data = merged_host_et_zoox)
+  # Create a QQ plot of residuals
+ggqqplot(residuals(model_11))
+  # Compute Shapiro-Wilk test of normality
+shapiro_test(residuals(model_11))  # we had a p < 0.05, which means that the data significantly deviates from a normal distribution 
+
+#Check normality assumption by groups. Computing Shapiro-Wilk test for each group level. If the data is normally distributed, the p-value should be greater than 0.05.
+merged_host_et_zoox %>%
+  group_by(tank) %>%
+  shapiro_test(protein_BSC_norm_zoox) # some colonies are <0.05, which means they are not normally distributed 
+
+# Checking normality of each colony 
+ggqqplot(merged_host_et_zoox, "protein_BSC_norm_zoox", facet.by = "tank")
+
+# Homogenietey of variance assumption 
+plot(model_11, 1) 
+
+#Computation 
+res.aov <- merged_host_et_zoox %>% anova_test(protein_BSC_norm_zoox ~ tank)
+res.aov
+
+```
+
+*** 
+
+#Normalizing Zoox Protein to Small Symbiont Count: 
+
+## Converting mg/SC * 1e+06 --> ng/SC
+
+```{r}
+#Adding a column of Zoox protein normalized to small symbiont count (SSC) 
+  #First I multiply: "proteins_zoox (mg/mL) * vol_add_brush (mL) = proteins_zoox(mg) 
+merged_host_et_zoox$protein_SSC_norm_zoox <- merged_host_et_zoox$"proteins_zoox (mg/ml)" * merged_host_et_zoox$vol_add_brush
+  #Then I want to normalize to the small symbiont count (SSC): proteins_zoox (mg) / small_symbiont_count
+merged_host_et_zoox$protein_SSC_norm_zoox<- merged_host_et_zoox$protein_SSC_norm_zoox / merged_host_et_zoox$small_symbiont_count
+
+# Converting mg/sa --> ng/sa 
+merged_host_et_zoox$protein_SSC_norm_zoox <- merged_host_et_zoox$protein_SSC_norm_zoox * (1e+06)
+```
+
+### Graphing: Small Symbiont Count Normalized Zoox Protein  vs _____
+
+## SSC Zoox protein vs treatments 
+```{r}
+#24 Protein per coral of zoox vs treatments 
+gg_base_24 <- ggplot(data = merged_host_et_zoox, aes(x = treatment, y = protein_SSC_norm_zoox, group = treatment))
+violin_24 <- gg_base_24 + geom_violin()
+violin_24 + geom_boxplot(width = 0.1) + labs(title = "Zoox SSC norm protein by treatment") + ylim(0,70) + ylab("Zoox: ng protein/SSC")
+```
+
+```{r, Checking for Outliers}
+# Summary Statistics: Before removing outliers 
+merged_host_et_zoox %>%
+  group_by(treatment) %>%
+  get_summary_stats(protein_SSC_norm_zoox, type = "mean_sd")
+# Visualization 
+ggboxplot(merged_host_et_zoox, x = "treatment", y = "protein_SSC_norm_zoox")
+
+# Check Assumptions: Outliers --> there are 2 extreme outliers 
+merged_host_et_zoox %>% 
+  group_by(treatment) %>%
+  identify_outliers(protein_SSC_norm_zoox) 
+
+# Check Normailty: Build the linear model
+model_8  <- lm(protein_SSC_norm_zoox ~ treatment, data = merged_host_et_zoox)
+  # Create a QQ plot of residuals
+ggqqplot(residuals(model_8))
+  # Compute Shapiro-Wilk test of normality
+shapiro_test(residuals(model_8))  # we had a p < 0.05, which means that the data significantly deviates from a normal distribution 
+
+#Check normality assumption by groups. Computing Shapiro-Wilk test for each group level. If the data is normally distributed, the p-value should be greater than 0.05.
+merged_host_et_zoox %>%
+  group_by(treatment) %>%
+  shapiro_test(protein_SSC_norm_zoox) # some colonies are <0.05, which means they are not normally distributed 
+
+# Checking normality of each colony 
+ggqqplot(merged_host_et_zoox, "protein_SSC_norm_zoox", facet.by = "treatment")
+
+# Homogenietey of variance assumption 
+plot(model_8, 1) 
+
+#Computation 
+res.aov <- merged_host_et_zoox %>% anova_test(protein_SSC_norm_zoox ~ treatment)
+res.aov
+
+```
+
+
+
+
+## SSC Zoox Protein vs Colony 
+```{r}
+#25 Protein per coral of Zoox vs colony 
+gg_base_25 <- ggplot(data = merged_host_et_zoox, aes(x = colony, y = protein_SSC_norm_zoox, group = colony))
+violin_25 <- gg_base_25 + geom_violin() + scale_x_continuous(breaks=c(1:12))
+violin_25 + geom_boxplot(width = 0.1) + labs(title = "Zoox SSC norm protein by colony") + ylim(0,100) + ylab("Zoox: ng protein/SSC")
+
+```
+
+```{r, Checking for Outliers}
+# Summary Statistics: Before removing outliers 
+merged_host_et_zoox %>%
+  group_by(colony) %>%
+  get_summary_stats(protein_SSC_norm_zoox, type = "mean_sd")
+# Visualization 
+ggboxplot(merged_host_et_zoox, x = "colony", y = "protein_SSC_norm_zoox")
+
+# Check Assumptions: Outliers --> there are 2 extreme outliers 
+merged_host_et_zoox %>% 
+  group_by(colony) %>%
+  identify_outliers(protein_SSC_norm_zoox) 
+
+# Check Normailty: Build the linear model
+model_4  <- lm(protein_SSC_norm_zoox ~ colony, data = merged_host_et_zoox)
+  # Create a QQ plot of residuals
+ggqqplot(residuals(model_4))
+  # Compute Shapiro-Wilk test of normality
+shapiro_test(residuals(model_4))  # we had a p < 0.05, which means that the data significantly deviates from a normal distribution 
+
+#Check normality assumption by groups. Computing Shapiro-Wilk test for each group level. If the data is normally distributed, the p-value should be greater than 0.05.
+merged_host_et_zoox %>%
+  group_by(colony) %>%
+  shapiro_test(protein_SSC_norm_zoox) # some colonies are <0.05, which means they are not normally distributed 
+
+# Checking normality of each colony 
+ggqqplot(merged_host_et_zoox, "protein_SSC_norm_zoox", facet.by = "colony")
+
+# Homogenietey of variance assumption 
+plot(model_4, 1) 
+
+#Computation 
+res.aov <- merged_host_et_zoox %>% anova_test(protein_SSC_norm_zoox ~ colony)
+res.aov
+
+```
+
+
+
+
+## SSC Zoox Protein vs Tank 
+```{r}
+#26 protein per coral of Zooxt vs tank 
+gg_base_26 <- ggplot(data = merged_host_et_zoox, aes(x = tank, y = protein_SSC_norm_zoox, group = tank))
+violin_26 <- gg_base_26 + geom_violin() + scale_x_continuous(breaks=c(1:12))
+violin_26 + geom_boxplot(width = 0.1) + labs(title = "Zoox SSC norm protein by tank") + ylim(0,30) + ylab("Zoox: ng protein/SSC")
+
+```
+
+
+```{r, Checking for Outliers}
+# Summary Statistics: Before removing outliers 
+merged_host_et_zoox %>%
+  group_by(tank) %>%
+  get_summary_stats(protein_SSC_norm_zoox, type = "mean_sd")
+# Visualization 
+ggboxplot(merged_host_et_zoox, x = "tank", y = "protein_SSC_norm_zoox")
+
+# Check Assumptions: Outliers --> there are 2 extreme outliers 
+merged_host_et_zoox %>% 
+  group_by(tank) %>%
+  identify_outliers(protein_SSC_norm_zoox) 
+
+# Check Normailty: Build the linear model
+model_12  <- lm(protein_SSC_norm_zoox ~ tank, data = merged_host_et_zoox)
+  # Create a QQ plot of residuals
+ggqqplot(residuals(model_12))
+  # Compute Shapiro-Wilk test of normality
+shapiro_test(residuals(model_12))  # we had a p < 0.05, which means that the data significantly deviates from a normal distribution 
+
+#Check normality assumption by groups. Computing Shapiro-Wilk test for each group level. If the data is normally distributed, the p-value should be greater than 0.05.
+merged_host_et_zoox %>%
+  group_by(tank) %>%
+  shapiro_test(protein_SSC_norm_zoox) # some colonies are <0.05, which means they are not normally distributed 
+
+# Checking normality of each colony 
+ggqqplot(merged_host_et_zoox, "protein_SSC_norm_zoox", facet.by = "tank")
+
+# Homogenietey of variance assumption 
+plot(model_12, 1) 
+
+#Computation 
+res.aov <- merged_host_et_zoox %>% anova_test(protein_SSC_norm_zoox ~ tank)
+res.aov
+
+```
+
+*** 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
