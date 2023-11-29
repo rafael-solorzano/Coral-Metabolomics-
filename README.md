@@ -4,7 +4,7 @@
  
   **Group**: [David Valentine Lab, UCSB Earth Science](https://valentine-lab.geol.ucsb.edu/)
 
-  ** Graduate Student Mentor **: Connor Love PhD
+  **Graduate Student Mentor**: Connor Love, PhD
    
 
 
